@@ -378,15 +378,7 @@ def draw_sticker(ws, top_row, box, inputs):
     r = draw_multiline_value(ws, r, "From", inputs["from_addr"])
     r = draw_multiline_value(ws, r, "To",   inputs["to_addr"])
 
-    # Box identifiers (20 px; merged B..G)
-    draw_label(ws, r, c, "Box S.N", set_label_height=True)
-    merge_value_B_to_G(ws, r, box["sn"], set_label_height=True)
-    r += 1
-
-    draw_label(ws, r, c, "Box code", set_label_height=True)
-    merge_value_B_to_G(ws, r, box["code_box"], set_label_height=True)
-    r += 1
-
+    
     # Components table with merged Box S.N (A) and Box code (B)
     r = draw_components_table_with_merged_sn_and_code(ws, r, c, box)
 
