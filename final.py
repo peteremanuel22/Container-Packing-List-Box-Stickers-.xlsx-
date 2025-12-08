@@ -521,6 +521,7 @@ if in_file and st.button("Generate stickers", type="primary", use_container_widt
 else:
     st.info("Upload your packing list (In.xlsx), fill the details, then click **Generate stickers**.")
 
+
 # ==== Centered footer ====
 footer_css = """
 <style>
@@ -543,3 +544,4 @@ footer_html = """
 <div class="app-footer">✨ تم التنفيذ بواسطة م / بيتر عمانوئيل – جميع الحقوق محفوظة © 2025 ✨</div>
 """
 st.markdown(footer_css, unsafe_allow_html=True)
+st.markdown(footer_html, unsafe_allow_html=True)
