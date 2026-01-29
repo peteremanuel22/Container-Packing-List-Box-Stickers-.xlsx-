@@ -410,23 +410,50 @@ if in_file:
         with st.expander("Packing List No. per sheet (optional)", expanded=True):
             st.caption("If your file has multiple sheets, provide a separate Packing List No. for each sheet (optional).")
             for title in visible_sheets_titles:
-                sheet_pl_inputs[title] = st.text_input(f"Packing List No. for sheet '{title}':", value="")
+                sheet_pl_inputs[title] = st.text_input(
+                    f"Packing List No. for sheet '{title}':",
+                    value="",
+                    placeholder="e.g., PL-2025-ALGERIA-BB"
+                )
     except Exception as e:
         st.warning(f"Could not open workbook to list sheets: {e}")
 
 with st.expander("Required shipment details (global)", expanded=True):
-    # Ask for 3 Modele values (optional)
-    modele_1 = st.text_input("Modele #1 (optional):", value="")
-    modele_2 = st.text_input("Modele #2 (optional):", value="")
-    modele_3 = st.text_input("Modele #3 (optional):", value="")
-    # Ask for 3 Order No. values (optional)
-    order_1  = st.text_input("Order No. #1 (optional):", value="")
-    order_2  = st.text_input("Order No. #2 (optional):", value="")
-    order_3  = st.text_input("Order No. #3 (optional):", value="")
-    # Ask for Date of Shipment (single global)
-    shipment_dt = st.date_input("Date of shipment:", value=date.today())
-    # Ask for To value (requested change)
-    to_addr = st.text_area("To address (multi-line):", value="Customer / Plant\nCity, Country\nContact / Phone")
+    # Date of shipment
+    shipment_dt = st.date_input("Date of shipment:", value=date.today(), help="Will be merged vertically for emphasis.")
+
+    # To value (asked)
+    to_addr = st.text_area(
+        "To address (multi-line):",
+        value="Customer / Plant\nCity, Country\nContact / Phone",
+        help="This appears under the 'To' label on the sticker."
+    )
+
+    st.markdown("#### Modele (up to 3, optional)")
+    st.caption("Fill only what you need. Choose how many Modele values to add (0–3).")
+    n_modele = int(st.number_input("How many Modele values?", min_value=0, max_value=3, value=1, step=1))
+    modele_vals = ["", "", ""]
+    if n_modele > 0:
+        cols = st.columns(3)
+        for i in range(n_modele):
+            modele_vals[i] = cols[i].text_input(
+                f"Modele #{i+1}",
+                value="",
+                placeholder="e.g., GK-CFI5NBD-IV"
+            )
+
+    st.markdown("#### Order No. (up to 3, optional)")
+    st.caption("Fill only what you need. Choose how many Order No. values to add (0–3).")
+    n_orders = int(st.number_input("How many Order No. values?", min_value=0, max_value=3, value=1, step=1))
+    order_vals = ["", "", ""]
+    if n_orders > 0:
+        cols = st.columns(3)
+        for i in range(n_orders):
+            order_vals[i] = cols[i].text_input(
+                f"Order No. #{i+1}",
+                value="",
+                placeholder="e.g., 102000013513"
+            )
 
 with st.expander("Advanced options", expanded=False):
     rtl         = st.checkbox("Right-to-left worksheet (recommended for Arabic)", value=True)
@@ -451,13 +478,10 @@ if in_file and st.button("Generate stickers", type="primary", use_container_widt
             "qty":      ["Qut.", "Qu.", "Qty", "Quantity", "QTY"]
         }
 
-        # Global value lists (optional)
-        modele_vals = [modele_1.strip(), modele_2.strip(), modele_3.strip()]
-        order_vals  = [order_1.strip(),  order_2.strip(),  order_3.strip()]
-        # From is fixed per spec
-        from_addr = FROM_ADDR_DEFAULT
-        # To from user input
-        to_addr_val = to_addr.strip()
+        # From (fixed) and To (from user)
+        from_addr_val = FROM_ADDR_DEFAULT
+        to_addr_val   = to_addr.strip()
+        date_str      = shipment_dt.strftime("%Y-%m-%d")
 
         for ws_in in wb_in.worksheets:
             if ws_in.sheet_state != "visible":
@@ -482,13 +506,12 @@ if in_file and st.button("Generate stickers", type="primary", use_container_widt
 
             # Packing List No. for this sheet (optional)
             sheet_pl_no = (sheet_pl_inputs.get(ws_in.title, "") or "").strip()
-            date_str = shipment_dt.strftime("%Y-%m-%d")
 
             next_top = 1
             for b in boxes:
                 next_top = draw_sticker(
                     ws_out, next_top, b,
-                    from_addr=from_addr,
+                    from_addr=from_addr_val,
                     to_addr=to_addr_val,
                     sheet_pl_no=sheet_pl_no,
                     date_str=date_str,
@@ -514,12 +537,11 @@ if in_file and st.button("Generate stickers", type="primary", use_container_widt
         )
 
         # Optional preview (first 10 rows from the first visible sheet)
-        first_visible_title = next((ws.title for ws in wb_in.worksheets if ws.sheet_state=='visible'), None)
-        if first_visible_title:
-            first_ws = next(ws for ws in wb_in.worksheets if ws.title == first_visible_title)
-            header_row, col_map = find_header_row(first_ws, header_candidates)
+        first_visible = next((ws for ws in wb_in.worksheets if ws.sheet_state=='visible'), None)
+        if first_visible:
+            header_row, col_map = find_header_row(first_visible, header_candidates)
             if header_row:
-                data_rows = read_rows(first_ws, header_row, col_map)
+                data_rows = read_rows(first_visible, header_row, col_map)
                 with st.expander("Preview (first 10 rows from the first visible sheet)", expanded=False):
                     st.dataframe(pd.DataFrame(data_rows[:10]), use_container_width=True, hide_index=True)
 
