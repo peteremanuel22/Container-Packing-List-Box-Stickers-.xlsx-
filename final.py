@@ -26,8 +26,8 @@ _ensure_openpyxl()
 # --- End fallback ---
 
 import io
+import re
 from datetime import date, datetime
-import openpyxl
 import streamlit as st
 import pandas as pd
 from openpyxl import load_workbook, Workbook
@@ -49,6 +49,24 @@ FROM_ADDR_DEFAULT = (
     "Tel      .:+2 015 410 546 - 015 410 399\n"
     " www.fresh.com.eg"
 )
+
+# ======================== Utilities ========================
+def safe_sheet_name(name: str) -> str:
+    """Ensure sheet name is valid for Excel (<=31 chars, remove invalid chars)."""
+    name = re.sub(r'[:\\/?*\[\]]', '-', name)
+    return name[:31] if len(name) > 31 else name
+
+def unique_sheet_name(wb, base: str) -> str:
+    """Return a sheet name unique within wb, trimming to Excel's 31-char limit."""
+    base = safe_sheet_name(base)
+    if base not in wb.sheetnames:
+        return base
+    i = 1
+    while True:
+        cand = safe_sheet_name(f"{base} ({i})")
+        if cand not in wb.sheetnames:
+            return cand
+        i += 1
 
 # ======================== Parsing helpers ========================
 def find_header_row(ws, header_candidates):
@@ -166,7 +184,7 @@ HEADER_FILL   = PatternFill("solid", fgColor="D9E1F2")
 TABLE_HEADER_FILL = PatternFill("solid", fgColor="F2F2F2")
 COL_A_WIDTH_UNITS = 12.2  # ~90 px
 
-# ======================== Sticker layout helpers ========================
+# ======================== Stickers layout helpers ========================
 def set_default_widths(ws):
     ws.column_dimensions["A"].width = COL_A_WIDTH_UNITS
     width_map = {"B": 20, "C": 20, "D": 20, "E": 20, "F": 20, "G": 16}
@@ -232,27 +250,29 @@ def draw_top_info_grid_with_spanning(ws, r, packing_list_no, date_str, modele_va
       r+2:  18.75pt (~25px)
       r+3:  18.75pt (~25px)
     """
-    # Titles merges
+    # Titles
     ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=2)  # A..B
     ws.merge_cells(start_row=r, start_column=5, end_row=r, end_column=7)  # E..G
 
-    # Titles content
     t_pln = ws.cell(row=r, column=1); t_pln.value = "Packing List No."
     t_pln.font = LABEL_FONT; t_pln.alignment = ALIGN_CENTER; t_pln.border = B_THIN
     ws.cell(row=r, column=2).border = B_THIN
+
     t_modele = ws.cell(row=r, column=3); t_modele.value = "Modele"
     t_modele.font = LABEL_FONT; t_modele.alignment = ALIGN_CENTER; t_modele.border = B_THIN
+
     t_order  = ws.cell(row=r, column=4); t_order.value  = "Order No."
     t_order.font  = LABEL_FONT; t_order.alignment  = ALIGN_CENTER; t_order.border  = B_THIN
+
     t_date   = ws.cell(row=r, column=5); t_date.value   = "Date of Shipment"
     t_date.font   = LABEL_FONT; t_date.alignment   = ALIGN_CENTER; t_date.border   = B_THIN
     ws.cell(row=r, column=6).border = B_THIN
     ws.cell(row=r, column=7).border = B_THIN
 
-    # Values rows (merge ONCE to final spans — Excel 2016 safe)
+    # Values (Excel 2016 safe: merge ONCE to final spans)
     # Packing List No. → A..B across r+1..r+3
     ws.merge_cells(start_row=r+1, start_column=1, end_row=r+3, end_column=2)
-    v_pln = ws.cell(row=r+1, column=1)  # top-left of merged block
+    v_pln = ws.cell(row=r+1, column=1)
     v_pln.value = packing_list_no
     v_pln.font  = Font(bold=True, size=22)
     v_pln.alignment = ALIGN_CENTER
@@ -263,7 +283,7 @@ def draw_top_info_grid_with_spanning(ws, r, packing_list_no, date_str, modele_va
 
     # Date of Shipment → E..G across r+1..r+3
     ws.merge_cells(start_row=r+1, start_column=5, end_row=r+3, end_column=7)
-    v_date = ws.cell(row=r+1, column=5)  # top-left of merged block
+    v_date = ws.cell(row=r+1, column=5)
     v_date.value = date_str
     v_date.font  = Font(bold=True, size=22)
     v_date.alignment = ALIGN_CENTER
@@ -273,7 +293,7 @@ def draw_top_info_grid_with_spanning(ws, r, packing_list_no, date_str, modele_va
         ws.cell(row=rr, column=6).border = B_THIN
         ws.cell(row=rr, column=7).border = B_THIN
 
-    # Modele values in C on r+1..r+3 (optional)
+    # Modele values in C (3 rows)
     for i, rr in enumerate(range(r+1, r+4)):
         val = modele_vals[i] if i < len(modele_vals) else ""
         cell = ws.cell(row=rr, column=3)
@@ -282,7 +302,7 @@ def draw_top_info_grid_with_spanning(ws, r, packing_list_no, date_str, modele_va
         cell.alignment = ALIGN_CENTER
         cell.border    = B_THIN
 
-    # Order values in D on r+1..r+3 (optional)
+    # Order values in D (3 rows)
     for i, rr in enumerate(range(r+1, r+4)):
         val = order_vals[i] if i < len(order_vals) else ""
         cell = ws.cell(row=rr, column=4)
@@ -291,7 +311,6 @@ def draw_top_info_grid_with_spanning(ws, r, packing_list_no, date_str, modele_va
         cell.alignment = ALIGN_CENTER
         cell.border    = B_THIN
 
-    # Heights
     ws.row_dimensions[r].height   = TOP_TITLES_ROW_PT
     ws.row_dimensions[r+1].height = TOP_VALUES_ROW_PT
     ws.row_dimensions[r+2].height = TOP_VALUES_ROW_PT
@@ -383,7 +402,7 @@ def draw_sticker(ws, top_row, box, from_addr, to_addr, sheet_pl_no, date_str, mo
     r = draw_right_label_row(ws, r, "From", from_addr)
     r = draw_right_label_row(ws, r, "To",   to_addr)
 
-    # Top info grid (with single, final vertical merges — Excel 2016 safe)
+    # Top info grid (Excel 2016 safe merges)
     r = draw_top_info_grid_with_spanning(ws, r, sheet_pl_no, date_str, modele_vals, order_vals)
 
     # Components table with merged Box S.N (A) and Box code (B)
@@ -395,7 +414,7 @@ def draw_sticker(ws, top_row, box, from_addr, to_addr, sheet_pl_no, date_str, mo
 
 # ======================== Streamlit UI ========================
 st.title("🎫 Container Packing List → Box Stickers (.xlsx)")
-st.caption("Upload the packing list (.xlsx). I’ll generate one sticker per box, including all components and the required shipment details, arranged per input sheet (RTL).")
+st.caption("Output includes each original sheet exactly as-is, followed immediately by its 'Stickers - {sheet}' sheet. Excel 2016 safe merges.")
 
 in_file = st.file_uploader("Upload packing list (In.xlsx)", type=["xlsx"], accept_multiple_files=False)
 
@@ -405,7 +424,9 @@ visible_sheets_titles = []
 
 if in_file:
     try:
-        wb_probe = load_workbook(in_file, data_only=True)
+        # Probe once just to list sheet titles
+        bytes_data = in_file.getvalue()
+        wb_probe = load_workbook(io.BytesIO(bytes_data), data_only=True)
         visible_sheets_titles = [ws.title for ws in wb_probe.worksheets if ws.sheet_state == "visible"]
         with st.expander("Packing List No. per sheet (optional)", expanded=True):
             st.caption("If your file has multiple sheets, provide a separate Packing List No. for each sheet (optional).")
@@ -420,17 +441,17 @@ if in_file:
 
 with st.expander("Required shipment details (global)", expanded=True):
     # Date of shipment
-    shipment_dt = st.date_input("Date of shipment:", value=date.today(), help="Will be merged vertically for emphasis.")
+    shipment_dt = st.date_input("Date of shipment:", value=date.today(), help="Merged vertically for emphasis (E..G).")
 
-    # To value (asked)
+    # To value
     to_addr = st.text_area(
         "To address (multi-line):",
         value="Customer / Plant\nCity, Country\nContact / Phone",
-        help="This appears under the 'To' label on the sticker."
+        help="Appears under the 'To' label on the sticker."
     )
 
     st.markdown("#### Modele (up to 3, optional)")
-    st.caption("Fill only what you need. Choose how many Modele values to add (0–3).")
+    st.caption("Choose how many Modele values to add (0–3).")
     n_modele = int(st.number_input("How many Modele values?", min_value=0, max_value=3, value=1, step=1))
     modele_vals = ["", "", ""]
     if n_modele > 0:
@@ -443,7 +464,7 @@ with st.expander("Required shipment details (global)", expanded=True):
             )
 
     st.markdown("#### Order No. (up to 3, optional)")
-    st.caption("Fill only what you need. Choose how many Order No. values to add (0–3).")
+    st.caption("Choose how many Order No. values to add (0–3).")
     n_orders = int(st.number_input("How many Order No. values?", min_value=0, max_value=3, value=1, step=1))
     order_vals = ["", "", ""]
     if n_orders > 0:
@@ -463,12 +484,13 @@ st.divider()
 
 if in_file and st.button("Generate stickers", type="primary", use_container_width=True):
     try:
-        wb_in = load_workbook(in_file, data_only=True)
+        # Load bytes so we can load twice: once for data reading; once for preserving full formatting/styles
+        file_bytes = in_file.getvalue()
 
-        # Output workbook: one sheet per visible input sheet
-        wb_out = Workbook()
-        # remove default empty sheet
-        wb_out.remove(wb_out.active)
+        # wb_data: data-only reading for parsing component lists
+        wb_data = load_workbook(io.BytesIO(file_bytes), data_only=True)
+        # wb_out: full-fidelity workbook (formulas/styles preserved); we'll add stickers here
+        wb_out = load_workbook(io.BytesIO(file_bytes), data_only=False)
 
         total_stickers = 0
         header_candidates = {
@@ -478,39 +500,44 @@ if in_file and st.button("Generate stickers", type="primary", use_container_widt
             "qty":      ["Qut.", "Qu.", "Qty", "Quantity", "QTY"]
         }
 
-        # From (fixed) and To (from user)
         from_addr_val = FROM_ADDR_DEFAULT
         to_addr_val   = to_addr.strip()
         date_str      = shipment_dt.strftime("%Y-%m-%d")
 
-        for ws_in in wb_in.worksheets:
-            if ws_in.sheet_state != "visible":
-                continue
+        # Iterate visible sheets by title using wb_out (so inserting order is aligned with preserved workbook)
+        visible_titles = [ws.title for ws in wb_out.worksheets if ws.sheet_state == "visible"]
 
-            header_row, col_map = find_header_row(ws_in, header_candidates)
+        for title in visible_titles:
+            ws_out_original = wb_out[title]        # original sheet (unchanged)
+            ws_data_sheet   = wb_data[title]       # parallel data-only sheet for parsing
 
-            # Create corresponding output sheet (always, to preserve organization)
-            ws_out = wb_out.create_sheet(title=f"Stickers - {ws_in.title}")
-            ws_out.sheet_view.rightToLeft = rtl
-            set_default_widths(ws_out)
+            # Prepare stickers sheet name and insert right after original
+            stickers_title = unique_sheet_name(wb_out, f"Stickers - {title}")
+            original_index = wb_out.sheetnames.index(title)
+            ws_stickers = wb_out.create_sheet(title=stickers_title, index=original_index + 1)
+            ws_stickers.sheet_view.rightToLeft = rtl
+            set_default_widths(ws_stickers)
 
+            # Parse header/rows from data-only sheet
+            header_row, col_map = find_header_row(ws_data_sheet, header_candidates)
             if header_row is None:
-                ws_out.cell(row=1, column=1).value = f"Header not detected in sheet '{ws_in.title}'."
+                ws_stickers.cell(row=1, column=1).value = f"Header not detected in sheet '{title}'."
                 continue
 
-            data_rows = read_rows(ws_in, header_row, col_map)
+            data_rows = read_rows(ws_data_sheet, header_row, col_map)
             boxes = group_boxes(data_rows)
             if not boxes:
-                ws_out.cell(row=1, column=1).value = f"No boxes/components found in sheet '{ws_in.title}'."
+                ws_stickers.cell(row=1, column=1).value = f"No boxes/components found in sheet '{title}'."
                 continue
 
             # Packing List No. for this sheet (optional)
-            sheet_pl_no = (sheet_pl_inputs.get(ws_in.title, "") or "").strip()
+            sheet_pl_no = (sheet_pl_inputs.get(title, "") or "").strip()
 
+            # Render stickers on the stickers sheet
             next_top = 1
             for b in boxes:
                 next_top = draw_sticker(
-                    ws_out, next_top, b,
+                    ws_stickers, next_top, b,
                     from_addr=from_addr_val,
                     to_addr=to_addr_val,
                     sheet_pl_no=sheet_pl_no,
@@ -521,34 +548,37 @@ if in_file and st.button("Generate stickers", type="primary", use_container_widt
                 next_top += spacer_rows
             total_stickers += len(boxes)
 
-        # Save to bytes and offer download
+        # Save the preserved workbook (original sheets + inserted stickers)
         buff = io.BytesIO()
         wb_out.save(buff)
         buff.seek(0)
         ts = datetime.now().strftime("%Y%m%d_%H%M")
         filename = f"box_stickers_{ts}.xlsx"
-        st.success(f"✅ Generated {total_stickers} stickers across {len([ws for ws in wb_in.worksheets if ws.sheet_state=='visible'])} sheet(s).")
+        st.success(
+            f"✅ Generated {total_stickers} stickers. "
+            f"Original sheets are preserved intact, with stickers inserted after each."
+        )
         st.download_button(
-            label="⬇️ Download Stickers Excel",
+            label="⬇️ Download Combined Workbook",
             data=buff,
             file_name=filename,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True
         )
 
-        # Optional preview (first 10 rows from the first visible sheet)
-        first_visible = next((ws for ws in wb_in.worksheets if ws.sheet_state=='visible'), None)
-        if first_visible:
-            header_row, col_map = find_header_row(first_visible, header_candidates)
+        # Optional preview from the first visible sheet (data-only)
+        if visible_titles:
+            first_title = visible_titles[0]
+            header_row, col_map = find_header_row(wb_data[first_title], header_candidates)
             if header_row:
-                data_rows = read_rows(first_visible, header_row, col_map)
+                data_rows = read_rows(wb_data[first_title], header_row, col_map)
                 with st.expander("Preview (first 10 rows from the first visible sheet)", expanded=False):
                     st.dataframe(pd.DataFrame(data_rows[:10]), use_container_width=True, hide_index=True)
 
     except Exception as e:
         st.error(f"Generation failed: {e}")
 else:
-    st.info("Upload your packing list (In.xlsx), fill the details, then click **Generate stickers**.")
+    st.info("Upload your packing list (In.xlsx), then click **Generate stickers**.")
 
 # ==== Centered footer ====
 footer_css = """
