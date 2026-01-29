@@ -37,10 +37,10 @@ st.set_page_config(page_title="Container Packing List → Box Stickers", layout=
 
 # ======================== Constants ========================
 # px → pt approx: 1 px ≈ 0.75 pt
-ROW_HEIGHT_FROM_TO_PT = 91.5    # ≈ 122 px
-TOP_TITLES_ROW_PT     = 37.5    # ≈ 50 px
-TOP_VALUES_ROW_PT     = 18.75   # ≈ 25 px
-COMP_ROW_HEIGHT_PT    = 26.25   # ≈ 35 px
+ROW_HEIGHT_FROM_TO_PT = 91.5    # ≈ 122 px for From/To rows
+TOP_TITLES_ROW_PT     = 37.5    # ≈ 50 px for titles row
+TOP_VALUES_ROW_PT     = 18.75   # ≈ 25 px for each of the 3 values rows
+COMP_ROW_HEIGHT_PT    = 26.25   # ≈ 35 px for components table rows
 
 FROM_ADDR_DEFAULT = (
     "Fresh Electric for Home Appliances\n"
@@ -56,9 +56,9 @@ def find_header_row(ws, header_candidates):
     Detect header row by matching known header labels.
     Returns (header_row_idx, col_map) where col_map maps logical keys → 1-based column index.
     NOTE (forced columns by index):
-    - Box code -> column B (index 2)
+    - Box code  -> column B (index 2)
     - Component code -> column E (index 5)
-    - Box type -> column G (index 7, Arabic)
+    - Box type  -> column G (index 7, Arabic)
     """
     header_row_idx = None
     best_match_count = -1
@@ -190,7 +190,7 @@ def draw_right_label_row(ws, r, label, value):
     Label on the right (F..G merged), value on the left (A..E merged).
     Row height ~122 px; both label & value Bold 14.
     """
-    # Value A..E (single merge only once)
+    # Value A..E
     ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=5)  # A..E
     vcell = ws.cell(row=r, column=1)
     vcell.value = value
@@ -212,81 +212,91 @@ def draw_right_label_row(ws, r, label, value):
     ws.row_dimensions[r].height = ROW_HEIGHT_FROM_TO_PT
     return r + 1
 
-def draw_top_info_grid_with_spanning(ws, r, inputs):
+def draw_top_info_grid_with_spanning(ws, r, packing_list_no, date_str, modele_vals, order_vals):
     """
-    Four fields over two core rows + two empty rows (total 4 rows):
-      Row r (titles):
+    Layout: titles row + 3 values rows (total 4 rows here):
+      Titles row (r):
         A..B merged: Packing List No.
         C: Modele
         D: Order No.
         E..G merged: Date of Shipment
-      Row r+1 (values row):
-        A..B    (top-left only): packing_list_no (Bold 22)  → merged vertically across r+1..r+3
-        C       : modele (size 14)
-        D       : order_no (size 14)
-        E..G    (top-left only): date_str (Bold 22)  → merged vertically across r+1..r+3
-      Rows r+2 & r+3: empty rows (keep C & D empty)
+      Values rows (r+1, r+2, r+3):
+        A..B merged vertically across r+1..r+3: packing_list_no (Bold 22)
+        E..G merged vertically across r+1..r+3: date_str       (Bold 22)
+        C (r+1..r+3): modele values (#1..#3, size 14)
+        D (r+1..r+3): order  values (#1..#3, size 14)
+
+    Heights:
+      r:    37.5pt (~50px)
+      r+1:  18.75pt (~25px)
+      r+2:  18.75pt (~25px)
+      r+3:  18.75pt (~25px)
     """
-    # ---- Titles (single-row merges) ----
+    # Titles merges
     ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=2)  # A..B
     ws.merge_cells(start_row=r, start_column=5, end_row=r, end_column=7)  # E..G
 
+    # Titles content
     t_pln = ws.cell(row=r, column=1); t_pln.value = "Packing List No."
     t_pln.font = LABEL_FONT; t_pln.alignment = ALIGN_CENTER; t_pln.border = B_THIN
     ws.cell(row=r, column=2).border = B_THIN
-
     t_modele = ws.cell(row=r, column=3); t_modele.value = "Modele"
     t_modele.font = LABEL_FONT; t_modele.alignment = ALIGN_CENTER; t_modele.border = B_THIN
-
-    t_order = ws.cell(row=r, column=4); t_order.value = "Order No."
-    t_order.font = LABEL_FONT; t_order.alignment = ALIGN_CENTER; t_order.border = B_THIN
-
-    t_date = ws.cell(row=r, column=5); t_date.value = "Date of Shipment"
-    t_date.font = LABEL_FONT; t_date.alignment = ALIGN_CENTER; t_date.border = B_THIN
+    t_order  = ws.cell(row=r, column=4); t_order.value  = "Order No."
+    t_order.font  = LABEL_FONT; t_order.alignment  = ALIGN_CENTER; t_order.border  = B_THIN
+    t_date   = ws.cell(row=r, column=5); t_date.value   = "Date of Shipment"
+    t_date.font   = LABEL_FONT; t_date.alignment   = ALIGN_CENTER; t_date.border   = B_THIN
     ws.cell(row=r, column=6).border = B_THIN
     ws.cell(row=r, column=7).border = B_THIN
 
-    # ---- Values Row + Vertical Merges (merge ONCE to final size) ----
-    # Merge A..B across r+1..r+3 for Packing List No. value
+    # Values rows (merge ONCE to final spans — Excel 2016 safe)
+    # Packing List No. → A..B across r+1..r+3
     ws.merge_cells(start_row=r+1, start_column=1, end_row=r+3, end_column=2)
-    v_pln = ws.cell(row=r+1, column=1)  # top-left cell only
-    v_pln.value = inputs["packing_list_no"]
-    v_pln.font = Font(bold=True, size=22)
+    v_pln = ws.cell(row=r+1, column=1)  # top-left of merged block
+    v_pln.value = packing_list_no
+    v_pln.font  = Font(bold=True, size=22)
     v_pln.alignment = ALIGN_CENTER
-    v_pln.border = B_THIN
-    # Border the merged block
+    v_pln.border    = B_THIN
     for rr in range(r+1, r+4):
-        for cc in (1, 2):
-            ws.cell(row=rr, column=cc).border = B_THIN
+        ws.cell(row=rr, column=1).border = B_THIN
+        ws.cell(row=rr, column=2).border = B_THIN
 
-    # Modele & Order on values row only (no vertical merge)
-    v_modele = ws.cell(row=r+1, column=3); v_modele.value = inputs["modele"]
-    v_modele.font = Font(bold=False, size=14); v_modele.alignment = ALIGN_CENTER; v_modele.border = B_THIN
-
-    v_order = ws.cell(row=r+1, column=4); v_order.value = inputs["order_no"]
-    v_order.font = Font(bold=False, size=14); v_order.alignment = ALIGN_CENTER; v_order.border = B_THIN
-
-    # Merge E..G across r+1..r+3 for Date of Shipment value
+    # Date of Shipment → E..G across r+1..r+3
     ws.merge_cells(start_row=r+1, start_column=5, end_row=r+3, end_column=7)
-    v_date = ws.cell(row=r+1, column=5)  # top-left cell only
-    v_date.value = inputs["date_str"]
-    v_date.font = Font(bold=True, size=22)
+    v_date = ws.cell(row=r+1, column=5)  # top-left of merged block
+    v_date.value = date_str
+    v_date.font  = Font(bold=True, size=22)
     v_date.alignment = ALIGN_CENTER
-    v_date.border = B_THIN
-    # Border the merged block
+    v_date.border    = B_THIN
     for rr in range(r+1, r+4):
-        for cc in (5, 6, 7):
-            ws.cell(row=rr, column=cc).border = B_THIN
+        ws.cell(row=rr, column=5).border = B_THIN
+        ws.cell(row=rr, column=6).border = B_THIN
+        ws.cell(row=rr, column=7).border = B_THIN
 
-    # Two empty rows (r+2, r+3) - keep C & D empty, but keep borders to maintain grid feel
-    for rr in (r+2, r+3):
-        for cc in range(1, 8):
-            ws.cell(row=rr, column=cc).border = B_THIN
+    # Modele values in C on r+1..r+3 (optional)
+    for i, rr in enumerate(range(r+1, r+4)):
+        val = modele_vals[i] if i < len(modele_vals) else ""
+        cell = ws.cell(row=rr, column=3)
+        cell.value = val
+        cell.font  = Font(bold=False, size=14)
+        cell.alignment = ALIGN_CENTER
+        cell.border    = B_THIN
+
+    # Order values in D on r+1..r+3 (optional)
+    for i, rr in enumerate(range(r+1, r+4)):
+        val = order_vals[i] if i < len(order_vals) else ""
+        cell = ws.cell(row=rr, column=4)
+        cell.value = val
+        cell.font  = Font(bold=False, size=14)
+        cell.alignment = ALIGN_CENTER
+        cell.border    = B_THIN
 
     # Heights
-    ws.row_dimensions[r].height   = TOP_TITLES_ROW_PT    # ~50 px
-    ws.row_dimensions[r+1].height = TOP_VALUES_ROW_PT    # ~25 px
-    # r+2, r+3 default height
+    ws.row_dimensions[r].height   = TOP_TITLES_ROW_PT
+    ws.row_dimensions[r+1].height = TOP_VALUES_ROW_PT
+    ws.row_dimensions[r+2].height = TOP_VALUES_ROW_PT
+    ws.row_dimensions[r+3].height = TOP_VALUES_ROW_PT
+
     return r + 4
 
 def draw_table_header(ws, r, c0):
@@ -362,7 +372,7 @@ def draw_components_table_with_merged_sn_and_code(ws, r_start, c0, box):
 
     return r
 
-def draw_sticker(ws, top_row, box, inputs):
+def draw_sticker(ws, top_row, box, from_addr, to_addr, sheet_pl_no, date_str, modele_vals, order_vals):
     r = top_row
     c = 1  # start at column A
 
@@ -370,11 +380,11 @@ def draw_sticker(ws, top_row, box, inputs):
     r = draw_header(ws, r, c, "Sticker")
 
     # From / To immediately after title (rows 2 & 3)
-    r = draw_right_label_row(ws, r, "From", inputs["from_addr"])
-    r = draw_right_label_row(ws, r, "To",   inputs["to_addr"])
+    r = draw_right_label_row(ws, r, "From", from_addr)
+    r = draw_right_label_row(ws, r, "To",   to_addr)
 
-    # Top info grid (with single, final vertical merges — no overlapping merges)
-    r = draw_top_info_grid_with_spanning(ws, r, inputs)
+    # Top info grid (with single, final vertical merges — Excel 2016 safe)
+    r = draw_top_info_grid_with_spanning(ws, r, sheet_pl_no, date_str, modele_vals, order_vals)
 
     # Components table with merged Box S.N (A) and Box code (B)
     r = draw_components_table_with_merged_sn_and_code(ws, r, c, box)
@@ -389,13 +399,34 @@ st.caption("Upload the packing list (.xlsx). I’ll generate one sticker per box
 
 in_file = st.file_uploader("Upload packing list (In.xlsx)", type=["xlsx"], accept_multiple_files=False)
 
-with st.expander("Required shipment details", expanded=True):
-    packing_list_no = st.text_input("Packing List No.:", value="")
-    order_no        = st.text_input("Order number:", value="")
-    shipment_dt     = st.date_input("Date of shipment:", value=date.today())
-    modele          = st.text_input("Modele:", value="")
-    # From: fixed per spec
-    to_addr         = st.text_area("To address (multi-line):", value="Customer / Plant\nCity, Country\nContact / Phone")
+# Per-sheet Packing List No. inputs (optional)
+sheet_pl_inputs = {}
+visible_sheets_titles = []
+
+if in_file:
+    try:
+        wb_probe = load_workbook(in_file, data_only=True)
+        visible_sheets_titles = [ws.title for ws in wb_probe.worksheets if ws.sheet_state == "visible"]
+        with st.expander("Packing List No. per sheet (optional)", expanded=True):
+            st.caption("If your file has multiple sheets, provide a separate Packing List No. for each sheet (optional).")
+            for title in visible_sheets_titles:
+                sheet_pl_inputs[title] = st.text_input(f"Packing List No. for sheet '{title}':", value="")
+    except Exception as e:
+        st.warning(f"Could not open workbook to list sheets: {e}")
+
+with st.expander("Required shipment details (global)", expanded=True):
+    # Ask for 3 Modele values (optional)
+    modele_1 = st.text_input("Modele #1 (optional):", value="")
+    modele_2 = st.text_input("Modele #2 (optional):", value="")
+    modele_3 = st.text_input("Modele #3 (optional):", value="")
+    # Ask for 3 Order No. values (optional)
+    order_1  = st.text_input("Order No. #1 (optional):", value="")
+    order_2  = st.text_input("Order No. #2 (optional):", value="")
+    order_3  = st.text_input("Order No. #3 (optional):", value="")
+    # Ask for Date of Shipment (single global)
+    shipment_dt = st.date_input("Date of shipment:", value=date.today())
+    # Ask for To value (requested change)
+    to_addr = st.text_area("To address (multi-line):", value="Customer / Plant\nCity, Country\nContact / Phone")
 
 with st.expander("Advanced options", expanded=False):
     rtl         = st.checkbox("Right-to-left worksheet (recommended for Arabic)", value=True)
@@ -420,6 +451,14 @@ if in_file and st.button("Generate stickers", type="primary", use_container_widt
             "qty":      ["Qut.", "Qu.", "Qty", "Quantity", "QTY"]
         }
 
+        # Global value lists (optional)
+        modele_vals = [modele_1.strip(), modele_2.strip(), modele_3.strip()]
+        order_vals  = [order_1.strip(),  order_2.strip(),  order_3.strip()]
+        # From is fixed per spec
+        from_addr = FROM_ADDR_DEFAULT
+        # To from user input
+        to_addr_val = to_addr.strip()
+
         for ws_in in wb_in.worksheets:
             if ws_in.sheet_state != "visible":
                 continue
@@ -441,19 +480,22 @@ if in_file and st.button("Generate stickers", type="primary", use_container_widt
                 ws_out.cell(row=1, column=1).value = f"No boxes/components found in sheet '{ws_in.title}'."
                 continue
 
+            # Packing List No. for this sheet (optional)
+            sheet_pl_no = (sheet_pl_inputs.get(ws_in.title, "") or "").strip()
+            date_str = shipment_dt.strftime("%Y-%m-%d")
+
             next_top = 1
             for b in boxes:
-                inputs = {
-                    "packing_list_no": packing_list_no.strip(),
-                    "order_no":        order_no.strip(),
-                    "date_str":        shipment_dt.strftime("%Y-%m-%d"),
-                    "modele":          modele.strip(),
-                    "from_addr":       FROM_ADDR_DEFAULT,
-                    "to_addr":         to_addr.strip()
-                }
-                next_top = draw_sticker(ws_out, next_top, b, inputs)
+                next_top = draw_sticker(
+                    ws_out, next_top, b,
+                    from_addr=from_addr,
+                    to_addr=to_addr_val,
+                    sheet_pl_no=sheet_pl_no,
+                    date_str=date_str,
+                    modele_vals=modele_vals,
+                    order_vals=order_vals
+                )
                 next_top += spacer_rows
-
             total_stickers += len(boxes)
 
         # Save to bytes and offer download
@@ -471,12 +513,13 @@ if in_file and st.button("Generate stickers", type="primary", use_container_widt
             use_container_width=True
         )
 
-        # Optional preview (first 10 rows from first visible sheet)
-        first_visible = next((ws for ws in wb_in.worksheets if ws.sheet_state=='visible'), None)
-        if first_visible:
-            header_row, col_map = find_header_row(first_visible, header_candidates)
+        # Optional preview (first 10 rows from the first visible sheet)
+        first_visible_title = next((ws.title for ws in wb_in.worksheets if ws.sheet_state=='visible'), None)
+        if first_visible_title:
+            first_ws = next(ws for ws in wb_in.worksheets if ws.title == first_visible_title)
+            header_row, col_map = find_header_row(first_ws, header_candidates)
             if header_row:
-                data_rows = read_rows(first_visible, header_row, col_map)
+                data_rows = read_rows(first_ws, header_row, col_map)
                 with st.expander("Preview (first 10 rows from the first visible sheet)", expanded=False):
                     st.dataframe(pd.DataFrame(data_rows[:10]), use_container_width=True, hide_index=True)
 
